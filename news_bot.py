@@ -196,28 +196,18 @@ def send_to_feishu(message, access_token):
         print("❌ 错误：未获取到 access_token")
         return False
     
-    url = "https://open.feishu.cn/open-apis/im/v1/messages"
+    # 飞书消息 API v1 - receive_id_type 作为 query 参数
+    receive_id_type = "open_id"  # ou_ 开头的是 open_id
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type={receive_id_type}"
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/json'
     }
     
-    # 飞书消息 API 参数
-    # 判断 chat_id 类型
-    if chat_id.startswith("ou_"):
-        receive_id_type = "open_id"
-    elif chat_id.startswith("ok_"):
-        receive_id_type = "union_id"
-    elif chat_id.startswith("oc_"):
-        receive_id_type = "chat_id"
-    else:
-        receive_id_type = "open_id"  # 默认
-    
     payload = {
         "receive_id": chat_id,
-        "msg_type": "interactive",
-        "content": message,
-        "receive_id_type": receive_id_type
+        "msg_type": "post",
+        "content": message
     }
     
     try:
