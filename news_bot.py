@@ -45,29 +45,85 @@ def get_feishu_token():
         return None
 
 def get_news():
-    """获取新闻内容"""
-    # 这里可以接入实际新闻 API
-    # 示例：知乎日报、新浪新闻等
+    """获取新闻内容 - 国际 + 国内混合源"""
+    import feedparser
+    from datetime import datetime
     
-    news_items = [
-        {
-            "title": "📰 今日科技要闻",
-            "content": "AI 技术持续发展，多个领域取得突破",
-            "url": "https://example.com/tech"
-        },
-        {
-            "title": "🌍 国际动态",
-            "content": "全球科技合作进一步加强",
-            "url": "https://example.com/world"
-        },
-        {
-            "title": "💡 创新前沿",
-            "content": "新技术应用落地，改变生活方式",
-            "url": "https://example.com/innovation"
-        }
-    ]
+    news_items = []
     
-    return news_items
+    # 1. BBC 新闻头条（国际）
+    try:
+        bbc_feed = feedparser.parse("https://feeds.bbci.co.uk/news/rss.xml")
+        for entry in bbc_feed.entries[:2]:
+            news_items.append({
+                "title": "🌍 " + entry.title,
+                "content": entry.get('summary', '点击查看详细内容')[:100] + "...",
+                "url": entry.link
+            })
+    except Exception as e:
+        print(f"⚠️ BBC 获取失败：{e}")
+    
+    # 2. 彭博社财经（财经）
+    try:
+        bloomberg_feed = feedparser.parse("https://www.bloomberg.com/feed/podcast/bloomberg-surveillance.xml")
+        for entry in bloomberg_feed.entries[:1]:
+            news_items.append({
+                "title": "💰 " + entry.title,
+                "content": entry.get('summary', '财经新闻')[:100] + "...",
+                "url": entry.link
+            })
+    except Exception as e:
+        print(f"⚠️ 彭博社获取失败：{e}")
+    
+    # 3. 知乎热榜（热点）
+    try:
+        zhihu_response = requests.get("https://www.zhihu.com/api/v3/feed/topstory/hot?limit=5", timeout=10)
+        if zhihu_response.status_code == 200:
+            zhihu_data = zhihu_response.json()
+            for item in zhihu_data.get('data', [])[:2]:
+                target = item.get('target', {})
+                news_items.append({
+                    "title": "🔥 " + target.get('title', '知乎热榜'),
+                    "content": target.get('excerpt', '点击查看')[:100] + "...",
+                    "url": target.get('url', 'https://www.zhihu.com/hot')
+                })
+    except Exception as e:
+        print(f"⚠️ 知乎获取失败：{e}")
+    
+    # 4. 36 氪（科技财经）
+    try:
+        kr36_feed = feedparser.parse("https://36kr.com/feed")
+        for entry in kr36_feed.entries[:1]:
+            news_items.append({
+                "title": "💡 " + entry.title,
+                "content": entry.get('summary', '科技前沿')[:100] + "...",
+                "url": entry.link
+            })
+    except Exception as e:
+        print(f"⚠️ 36 氪获取失败：{e}")
+    
+    # 如果没有获取到任何新闻，使用备用数据
+    if not news_items:
+        print("⚠️ 使用备用新闻数据")
+        news_items = [
+            {
+                "title": "📰 今日科技要闻",
+                "content": "AI 技术持续发展，多个领域取得突破",
+                "url": "https://36kr.com/"
+            },
+            {
+                "title": "🌍 国际动态",
+                "content": "全球科技合作进一步加强",
+                "url": "https://www.bbc.com/news"
+            },
+            {
+                "title": "💡 创新前沿",
+                "content": "新技术应用落地，改变生活方式",
+                "url": "https://www.zhihu.com/hot"
+            }
+        ]
+    
+    return news_items[:6]  # 最多返回 6 条
 
 def format_message(news_items):
     """格式化飞书消息"""
