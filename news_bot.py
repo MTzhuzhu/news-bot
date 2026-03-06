@@ -89,11 +89,13 @@ def filter_by_category(title, summary):
     return False, "无匹配关键词"
 
 def generate_insight(title, summary, url):
-    """使用 AI 生成专业点评"""
-    api_key = os.getenv('DASHSCOPE_API_KEY')
+    """使用 AI 生成专业点评 - 支持 DeepSeek/DashScope"""
+    # 优先使用 DeepSeek，其次 DashScope
+    api_key = os.getenv('DASHSCOPE_API_KEY')  # 保持原名，兼容旧配置
+    use_deepseek = os.getenv('USE_DEEPSEEK', 'true').lower() == 'true'
     
     if not api_key:
-        return "[点评需配置 DASHSCOPE_API_KEY]"
+        return "[点评需配置 API Key]"
     
     prompt = f"""
 作为资深行业分析师，对以下新闻给出简洁犀利的专业点评（50 字内）：
@@ -109,25 +111,50 @@ def generate_insight(title, summary, url):
 """
     
     try:
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json'
-        }
-        payload = {
-            'model': 'qwen3.5-plus',
-            'messages': [{'role': 'user', 'content': prompt}],
-            'max_tokens': 100
-        }
-        response = requests.post(
-            'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-            headers=headers,
-            json=payload,
-            timeout=10
-        )
-        result = response.json()
-        if result.get('output') and result['output'].get('choices'):
-            insight = result['output']['choices'][0]['message']['content'].strip()
-            return insight[:80] + "..." if len(insight) > 80 else insight
+        if use_deepseek:
+            # DeepSeek API (兼容 OpenAI 格式)
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': 'deepseek-chat',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 100,
+                'temperature': 0.7
+            }
+            response = requests.post(
+                'https://api.deepseek.com/v1/chat/completions',
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            result = response.json()
+            if result.get('choices') and len(result['choices']) > 0:
+                insight = result['choices'][0]['message']['content'].strip()
+                return insight[:80] + "..." if len(insight) > 80 else insight
+        else:
+            # DashScope API (阿里云)
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': 'qwen3.5-plus',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 100
+            }
+            response = requests.post(
+                'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            result = response.json()
+            if result.get('output') and result['output'].get('choices'):
+                insight = result['output']['choices'][0]['message']['content'].strip()
+                return insight[:80] + "..." if len(insight) > 80 else insight
+        
         return "[AI 点评生成失败]"
     except Exception as e:
         print(f"⚠️ 点评生成失败：{e}")
