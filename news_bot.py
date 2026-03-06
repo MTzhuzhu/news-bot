@@ -72,21 +72,34 @@ def parse_rss(content):
         print(f"⚠️ RSS 解析失败：{e}")
     return items
 
-def filter_by_category(title, summary):
-    """过滤新闻，只保留目标领域"""
+def classify_news(title, summary):
+    """分类新闻到具体领域，返回领域标签"""
     text = (title + ' ' + summary).lower()
     
     # 检查排除词
     for word in EXCLUDE_KEYWORDS:
         if word.lower() in text:
-            return False, "排除类别"
+            return None, "排除类别"
     
-    # 检查目标词
-    for word in TARGET_CATEGORIES:
-        if word.lower() in text:
-            return True, f"匹配关键词：{word}"
+    # 按优先级分类（顺序重要）
+    # AI 优先于科技
+    if any(kw in text for kw in ['ai', '人工智能', '大模型', 'llm', 'deepseek', 'qwen']):
+        return 'AI', 'AI/大模型'
     
-    return False, "无匹配关键词"
+    # 金融/财经
+    if any(kw in text for kw in ['金融', '财经', '投资', '融资', 'ipo', '上市', '股票', '基金', '银行', '保险']):
+        return '金融', '金融/财经'
+    
+    # 汽车/电动车
+    if any(kw in text for kw in ['汽车', '电动车', 'ev', '特斯拉', '比亚迪', '蔚来', '小鹏', '理想', '自动驾驶']):
+        return '汽车', '汽车/出行'
+    
+    # 科技/互联网（兜底）
+    if any(kw in text for kw in ['科技', '互联网', '半导体', '芯片', '手机', 'app', '软件', '系统']):
+        return '科技', '科技/互联网'
+    
+    # 默认归为科技
+    return '科技', '默认分类'
 
 def generate_insight(title, summary, url):
     """使用 AI 生成专业点评 - 支持 DeepSeek/DashScope"""
@@ -172,14 +185,14 @@ def get_news():
         if response.status_code == 200:
             items = parse_rss(response.content)
             for item in items[:8]:
-                match, reason = filter_by_category(item['title'], item['summary'])
-                if match:
+                category, reason = classify_news(item['title'], item['summary'])
+                if category:
                     news_items.append({
                         "title": item['title'],
                         "summary": item['summary'][:150],
                         "url": item['link'],
                         "source": "36 氪",
-                        "category": reason
+                        "domain": category
                     })
     except Exception as e:
         print(f"⚠️ 36 氪获取失败：{e}")
@@ -191,14 +204,14 @@ def get_news():
         if response.status_code == 200:
             items = parse_rss(response.content)
             for item in items[:5]:
-                match, reason = filter_by_category(item['title'], item['summary'])
-                if match:
+                category, reason = classify_news(item['title'], item['summary'])
+                if category:
                     news_items.append({
                         "title": item['title'],
                         "summary": item['summary'][:150],
                         "url": item['link'],
                         "source": "虎嗅",
-                        "category": reason
+                        "domain": category
                     })
     except Exception as e:
         print(f"⚠️ 虎嗅获取失败：{e}")
@@ -210,14 +223,14 @@ def get_news():
         if response.status_code == 200:
             items = parse_rss(response.content)
             for item in items[:5]:
-                match, reason = filter_by_category(item['title'], item['summary'])
-                if match:
+                category, reason = classify_news(item['title'], item['summary'])
+                if category:
                     news_items.append({
                         "title": item['title'],
                         "summary": item['summary'][:150],
                         "url": item['link'],
                         "source": "车东西",
-                        "category": reason
+                        "domain": category
                     })
     except Exception as e:
         print(f"⚠️ 车东西获取失败：{e}")
@@ -232,14 +245,14 @@ def get_news():
                 target = item.get('target', {})
                 title = target.get('title', '')
                 excerpt = target.get('excerpt', '')
-                match, reason = filter_by_category(title, excerpt)
-                if match:
+                category, reason = classify_news(title, excerpt)
+                if category:
                     news_items.append({
                         "title": title,
                         "summary": excerpt[:150],
                         "url": target.get('url', 'https://www.zhihu.com/hot'),
                         "source": "知乎",
-                        "category": reason
+                        "domain": category
                     })
     except Exception as e:
         print(f"⚠️ 知乎获取失败：{e}")
@@ -256,21 +269,45 @@ def get_news():
     return unique_items[:8]  # 最多 8 条
 
 def format_message(news_items):
-    """格式化飞书消息 - 含专业点评"""
+    """格式化飞书消息 - 按领域分类 + 专业点评"""
     today = datetime.now().strftime("%Y年%m月%d日")
+    
+    # 按领域分组
+    domains = {}
+    domain_order = ['AI', '金融', '科技', '汽车']  # 显示顺序
+    
+    for item in news_items:
+        domain = item.get('domain', '科技')
+        if domain not in domains:
+            domains[domain] = []
+        domains[domain].append(item)
     
     text_lines = [f"📅 {today} 金融/科技/AI/汽车 情报\n"]
     text_lines.append("━━━━━━━━━━━━━━\n")
     
-    for i, news in enumerate(news_items, 1):
-        text_lines.append(f"{i}. {news['title']}")
-        text_lines.append(f"   📰 来源：{news['source']}")
-        text_lines.append(f"   🔗 {news['url']}")
+    global_idx = 1
+    for domain in domain_order:
+        if domain not in domains:
+            continue
         
-        # 生成点评
-        print(f"   💡 生成点评 {i}/{len(news_items)}...")
-        insight = generate_insight(news['title'], news['summary'], news['url'])
-        text_lines.append(f"   💼 点评：{insight}")
+        items = domains[domain]
+        # 领域标题
+        domain_emoji = {'AI': '🤖', '金融': '💰', '科技': '💻', '汽车': '🚗'}.get(domain, '📌')
+        text_lines.append(f"【{domain_emoji} {domain}】")
+        
+        for news in items:
+            text_lines.append(f"{global_idx}. {news['title']}")
+            text_lines.append(f"   📰 来源：{news['source']}")
+            text_lines.append(f"   🔗 {news['url']}")
+            
+            # 生成点评
+            print(f"   💡 生成点评 {global_idx}/{len(news_items)}...")
+            insight = generate_insight(news['title'], news['summary'], news['url'])
+            text_lines.append(f"   💼 点评：{insight}")
+            text_lines.append("")
+            
+            global_idx += 1
+        
         text_lines.append("")
     
     text_lines.append("━━━━━━━━━━━━━━")
