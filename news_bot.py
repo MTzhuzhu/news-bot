@@ -7,6 +7,7 @@
 
 import requests
 import os
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 # ============ 配置区域 ============
@@ -44,40 +45,51 @@ def get_feishu_token():
         print(f"❌ 异常：{e}")
         return None
 
+def parse_rss(content):
+    """解析 RSS XML 内容"""
+    items = []
+    try:
+        root = ET.fromstring(content)
+        # 处理不同的 RSS 命名空间
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        channel = root.find('.//channel')
+        if channel is not None:
+            for item in channel.findall('item'):
+                title = item.find('title')
+                link = item.find('link')
+                description = item.find('description')
+                if title is not None and link is not None:
+                    items.append({
+                        'title': title.text or '',
+                        'link': link.text or '',
+                        'summary': description.text[:100] + '...' if description is not None and description.text else '点击查看详细内容'
+                    })
+    except Exception as e:
+        print(f"⚠️ RSS 解析失败：{e}")
+    return items
+
 def get_news():
     """获取新闻内容 - 国际 + 国内混合源"""
-    import feedparser
-    from datetime import datetime
-    
     news_items = []
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)'}
     
     # 1. BBC 新闻头条（国际）
     try:
-        bbc_feed = feedparser.parse("https://feeds.bbci.co.uk/news/rss.xml")
-        for entry in bbc_feed.entries[:2]:
-            news_items.append({
-                "title": "🌍 " + entry.title,
-                "content": entry.get('summary', '点击查看详细内容')[:100] + "...",
-                "url": entry.link
-            })
+        response = requests.get("https://feeds.bbci.co.uk/news/rss.xml", headers=headers, timeout=10)
+        if response.status_code == 200:
+            items = parse_rss(response.content)
+            for item in items[:2]:
+                news_items.append({
+                    "title": "🌍 " + item['title'],
+                    "content": item['summary'],
+                    "url": item['link']
+                })
     except Exception as e:
         print(f"⚠️ BBC 获取失败：{e}")
     
-    # 2. 彭博社财经（财经）
+    # 2. 知乎热榜（热点）
     try:
-        bloomberg_feed = feedparser.parse("https://www.bloomberg.com/feed/podcast/bloomberg-surveillance.xml")
-        for entry in bloomberg_feed.entries[:1]:
-            news_items.append({
-                "title": "💰 " + entry.title,
-                "content": entry.get('summary', '财经新闻')[:100] + "...",
-                "url": entry.link
-            })
-    except Exception as e:
-        print(f"⚠️ 彭博社获取失败：{e}")
-    
-    # 3. 知乎热榜（热点）
-    try:
-        zhihu_response = requests.get("https://www.zhihu.com/api/v3/feed/topstory/hot?limit=5", timeout=10)
+        zhihu_response = requests.get("https://www.zhihu.com/api/v3/feed/topstory/hot?limit=5", headers=headers, timeout=10)
         if zhihu_response.status_code == 200:
             zhihu_data = zhihu_response.json()
             for item in zhihu_data.get('data', [])[:2]:
@@ -90,15 +102,17 @@ def get_news():
     except Exception as e:
         print(f"⚠️ 知乎获取失败：{e}")
     
-    # 4. 36 氪（科技财经）
+    # 3. 36 氪（科技财经）
     try:
-        kr36_feed = feedparser.parse("https://36kr.com/feed")
-        for entry in kr36_feed.entries[:1]:
-            news_items.append({
-                "title": "💡 " + entry.title,
-                "content": entry.get('summary', '科技前沿')[:100] + "...",
-                "url": entry.link
-            })
+        response = requests.get("https://36kr.com/feed", headers=headers, timeout=10)
+        if response.status_code == 200:
+            items = parse_rss(response.content)
+            for item in items[:1]:
+                news_items.append({
+                    "title": "💡 " + item['title'],
+                    "content": item['summary'],
+                    "url": item['link']
+                })
     except Exception as e:
         print(f"⚠️ 36 氪获取失败：{e}")
     
@@ -126,66 +140,32 @@ def get_news():
     return news_items[:6]  # 最多返回 6 条
 
 def format_message(news_items):
-    """格式化飞书消息"""
+    """格式化飞书消息 - 使用 text 类型简化"""
     today = datetime.now().strftime("%Y年%m月%d日")
     
-    content = [
-        [
-            {
-                "tag": "text",
-                "text": f"📅 {today} 新闻汇总\n",
-                "style": ["bold"]
-            }
-        ]
-    ]
+    text_lines = [f"📅 {today} 新闻汇总\n"]
     
     for i, news in enumerate(news_items, 1):
-        content.append([
-            {
-                "tag": "text",
-                "text": f"\n{i}. {news['title']}\n",
-                "style": ["bold"]
-            }
-        ])
-        content.append([
-            {
-                "tag": "text",
-                "text": f"{news['content']}\n"
-            }
-        ])
-        content.append([
-            {
-                "tag": "a",
-                "text": "查看详情 →",
-                "href": news['url']
-            }
-        ])
+        text_lines.append(f"\n{i}. {news['title']}")
+        text_lines.append(news['content'])
+        text_lines.append(f"🔗 {news['url']}")
     
-    content.append([
-        {"tag": "hr"}
-    ])
-    content.append([
-        {
-            "tag": "text",
-            "text": "\n祝你有美好的一天！☀️",
-            "style": ["italic"]
-        }
-    ])
+    text_lines.append("\n━━━━━━━━━━━━━━")
+    text_lines.append("\n祝你有美好的一天！☀️")
+    
+    full_text = "\n".join(text_lines)
     
     return {
-        "msg_type": "post",
+        "msg_type": "text",
         "content": {
-            "post": {
-                "zh_cn": {
-                    "title": f"📰 {today} 新闻汇总",
-                    "content": content
-                }
-            }
+            "text": full_text
         }
     }
 
 def send_to_feishu(message, access_token):
     """使用飞书 API 发送消息"""
+    import json
+    
     chat_id = os.getenv('FEISHU_CHAT_ID')
     
     if not chat_id:
@@ -204,10 +184,11 @@ def send_to_feishu(message, access_token):
         'Content-Type': 'application/json'
     }
     
+    # content 需要是 JSON 字符串
     payload = {
         "receive_id": chat_id,
-        "msg_type": "post",
-        "content": message
+        "msg_type": message["msg_type"],
+        "content": json.dumps(message["content"])
     }
     
     try:
