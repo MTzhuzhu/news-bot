@@ -203,10 +203,21 @@ def send_to_feishu(message, access_token):
     }
     
     # 飞书消息 API 参数
+    # 判断 chat_id 类型
+    if chat_id.startswith("ou_"):
+        receive_id_type = "open_id"
+    elif chat_id.startswith("ok_"):
+        receive_id_type = "union_id"
+    elif chat_id.startswith("oc_"):
+        receive_id_type = "chat_id"
+    else:
+        receive_id_type = "open_id"  # 默认
+    
     payload = {
         "receive_id": chat_id,
         "msg_type": "interactive",
-        "content": message
+        "content": message,
+        "receive_id_type": receive_id_type
     }
     
     try:
