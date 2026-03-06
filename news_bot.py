@@ -23,8 +23,18 @@ from datetime import datetime
 # 目标领域关键词
 TARGET_CATEGORIES = ['金融', '科技', 'AI', '人工智能', '汽车', '电动车', '投资', '财经', '半导体', '互联网']
 
-# 排除关键词
-EXCLUDE_KEYWORDS = ['娱乐', '明星', '体育', '政治', '社会', '天气', '旅游', '美食']
+# 排除关键词 - 社会/民生/娱乐类
+EXCLUDE_KEYWORDS = [
+    '娱乐', '明星', '体育', '政治', '社会', '天气', '旅游', '美食',
+    '寄生虫', '食安', '食品安全', '吃出', '曝光', '被曝',
+    '调休', '放假', '假期', '人大代表', '政协', '两会',
+    '婚姻', '恋爱', '相亲', '家庭', '孩子', '学校', '医院',
+    '车祸', '火灾', '事故', '案件', '警方', '法院',
+    '购物', '消费', '优惠', '打折', '电商', '快递'
+]
+
+# 汇总类新闻标记（需要特殊处理）
+SUMMARY_INDICATORS = ['8 点 1 氪', '早晚报', '日报', '周报', '一周盘点', '丨']
 
 def get_feishu_token():
     """获取飞书 access_token"""
@@ -76,15 +86,41 @@ def classify_news(title, summary):
     """分类新闻到具体领域，返回领域标签"""
     text = (title + ' ' + summary).lower()
     
-    # 检查排除词
-    for word in EXCLUDE_KEYWORDS:
-        if word.lower() in text:
-            return None, "排除类别"
+    # 1. 检查是否为汇总类新闻（如"8 点 1 氪丨..."）
+    is_summary = any(indicator in title for indicator in SUMMARY_INDICATORS)
     
-    # 按优先级分类（顺序重要）
+    # 2. 检查排除词 - 汇总类新闻更严格
+    if is_summary:
+        # 汇总类新闻：只要包含任何排除词就过滤
+        for word in EXCLUDE_KEYWORDS:
+            if word.lower() in text:
+                return None, f"汇总类含排除词：{word}"
+    else:
+        # 普通新闻：检查排除词
+        for word in EXCLUDE_KEYWORDS:
+            if word.lower() in text:
+                return None, f"排除类别：{word}"
+    
+    # 3. 按优先级分类（顺序重要）
     # AI 优先于科技
-    if any(kw in text for kw in ['ai', '人工智能', '大模型', 'llm', 'deepseek', 'qwen']):
-        return 'AI', 'AI/大模型'
+    ai_keywords = ['ai', '人工智能', '大模型', 'llm', 'deepseek', 'qwen', 'deepmind', 'openai', 'gpt']
+    if any(kw in text for kw in ai_keywords):
+        # 二次验证：AI 内容是否是主要内容（非汇总类或 AI 在标题后半段）
+        if not is_summary:
+            return 'AI', 'AI/大模型'
+        else:
+            # 汇总类：检查 AI 关键词是否在标题主要位置
+            # 如果 AI 关键词在"丨"之后，可能是主要内容之一
+            if '丨' in title:
+                parts = title.split('丨')
+                if len(parts) > 1:
+                    # 检查每个部分，只有纯 AI 内容才通过
+                    main_content = parts[-1]  # 取最后一部分（通常是主要新闻）
+                    if any(kw in main_content.lower() for kw in ai_keywords):
+                        # 再检查这部分是否含排除词
+                        if not any(ex in main_content.lower() for ex in EXCLUDE_KEYWORDS):
+                            return 'AI', 'AI/大模型'
+            return None, "汇总类 AI 内容不纯"
     
     # 金融/财经
     if any(kw in text for kw in ['金融', '财经', '投资', '融资', 'ipo', '上市', '股票', '基金', '银行', '保险']):
@@ -98,8 +134,8 @@ def classify_news(title, summary):
     if any(kw in text for kw in ['科技', '互联网', '半导体', '芯片', '手机', 'app', '软件', '系统']):
         return '科技', '科技/互联网'
     
-    # 默认归为科技
-    return '科技', '默认分类'
+    # 默认过滤（不确定的不要）
+    return None, "无明确分类"
 
 def generate_insight(title, summary, url):
     """使用 AI 生成专业点评 - 支持 DeepSeek/DashScope"""
