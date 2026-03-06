@@ -1,0 +1,34 @@
+name: Daily News Summary
+
+on:
+  schedule:
+    # 每天 10:00 UTC+8 (Beijing Time)
+    # GitHub Actions 使用 UTC，所以 10:00 CST = 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # 允许手动触发测试
+
+jobs:
+  news-summary:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Get News and Send to Feishu
+      env:
+        FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+        FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
+      run: |
+        python news_bot.py
