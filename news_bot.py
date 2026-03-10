@@ -102,40 +102,35 @@ def classify_news(title, summary):
                 return None, f"排除类别：{word}"
     
     # 3. 按优先级分类（顺序重要）
-    # AI 优先于科技
-    ai_keywords = ['ai', '人工智能', '大模型', 'llm', 'deepseek', 'qwen', 'deepmind', 'openai', 'gpt']
-    if any(kw in text for kw in ai_keywords):
-        # 二次验证：AI 内容是否是主要内容（非汇总类或 AI 在标题后半段）
-        if not is_summary:
-            return 'AI', 'AI/大模型'
-        else:
-            # 汇总类：检查 AI 关键词是否在标题主要位置
-            # 如果 AI 关键词在"丨"之后，可能是主要内容之一
-            if '丨' in title:
-                parts = title.split('丨')
-                if len(parts) > 1:
-                    # 检查每个部分，只有纯 AI 内容才通过
-                    main_content = parts[-1]  # 取最后一部分（通常是主要新闻）
-                    if any(kw in main_content.lower() for kw in ai_keywords):
-                        # 再检查这部分是否含排除词
-                        if not any(ex in main_content.lower() for ex in EXCLUDE_KEYWORDS):
-                            return 'AI', 'AI/大模型'
-            return None, "汇总类 AI 内容不纯"
-    
-    # 金融/财经
-    if any(kw in text for kw in ['金融', '财经', '投资', '融资', 'ipo', '上市', '股票', '基金', '银行', '保险']):
+    # 金融/财经 优先（扩大关键词）
+    finance_keywords = ['金融', '财经', '投资', '融资', 'ipo', '上市', '股票', '基金', 
+                       '银行', '保险', '估值', '创业', 'vc', 'pe', '并购', '财报', 
+                       '营收', '利润', '利率', '央行', '通胀', '经济', '信托', '期货']
+    if any(kw in text for kw in finance_keywords):
         return '金融', '金融/财经'
     
-    # 汽车/电动车
-    if any(kw in text for kw in ['汽车', '电动车', 'ev', '特斯拉', '比亚迪', '蔚来', '小鹏', '理想', '自动驾驶']):
+    # 汽车/电动车（扩大关键词）
+    auto_keywords = ['汽车', '电动车', 'ev', '特斯拉', '比亚迪', '蔚来', '小鹏', 
+                    '理想', '自动驾驶', '新能源', '造车', '车企', '销量', '交付',
+                    '小米汽车', '华为汽车', '智驾', '续航', '充电桩']
+    if any(kw in text for kw in auto_keywords):
         return '汽车', '汽车/出行'
     
-    # 科技/互联网（兜底）
-    if any(kw in text for kw in ['科技', '互联网', '半导体', '芯片', '手机', 'app', '软件', '系统']):
+    # AI/大模型（缩小范围，避免过度匹配）
+    ai_keywords = ['ai 大模型', '人工智能', 'llm', 'deepseek', 'qwen', 'deepmind', 'openai', 'gpt-4', 'gpt-5', 'sora']
+    if any(kw in text for kw in ai_keywords):
+        return 'AI', 'AI/大模型'
+    
+    # 科技/互联网（扩大关键词，作为次级兜底）
+    tech_keywords = ['科技', '互联网', '半导体', '芯片', '手机', 'app', '软件', '系统', 
+                    '数码', '硬件', '5g', '6g', '物联网', '云计算', '大数据',
+                    '腾讯', '阿里', '字节', '美团', '拼多多', '小米', '华为', '百度',
+                    '电商', '社交', '游戏', '直播', '短视频', '操作系统']
+    if any(kw in text for kw in tech_keywords):
         return '科技', '科技/互联网'
     
-    # 默认过滤（不确定的不要）
-    return None, "无明确分类"
+    # 默认兜底：归到科技类（不再过滤）
+    return '科技', '科技/互联网（兜底）'
 
 def generate_insight(title, summary, url):
     """使用 AI 生成专业点评 - 支持 DeepSeek/DashScope"""
