@@ -4,7 +4,8 @@ on:
   schedule:
     # 每天 10:00 UTC+8 (Beijing Time)
     # GitHub Actions 使用 UTC，所以 10:00 CST = 02:00 UTC
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'   # 主触发：10:00 北京
+    - cron: '30 2 * * *'  # 备用触发：10:30 北京
   workflow_dispatch:  # 允许手动触发测试
 
 jobs:
